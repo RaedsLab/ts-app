@@ -5,6 +5,8 @@ import { HttpStatusCode } from "../common/http-status-code";
 import { OperationError } from "../common/operation-error";
 import { isValidEmail } from "../../common/validation/is-valid-email";
 import { validatePasswordRequirements } from "../../common/validation/validate-password-requirements";
+import { log } from "../../node/utils/log";
+import { IUser } from "../../node/database/entities/user";
 import { AuthenticationService } from "./authentication-service";
 import { UserPasswordService } from "./user-password-service";
 
@@ -17,6 +19,10 @@ export interface IUserRegisterParams {
   email: string;
   name: string;
   password: string;
+}
+
+export interface IUpdateUserParams {
+  name: string;
 }
 
 export class UserService {
@@ -70,6 +76,31 @@ export class UserService {
       email,
       password,
     });
+  }
+
+  async update(user: IUser, { name }: IUpdateUserParams) {
+    this.validateUpdate(name);
+
+    try {
+      return await this.repository.update({
+        ...user,
+        name,
+      });
+    } catch (err) {
+      log.error(err.message);
+
+      throw err;
+    }
+  }
+
+  private validateUpdate(name: string) {
+    if (!name) {
+      throw new OperationError(
+        "INVALID_PARAMETERS",
+        HttpStatusCode.BAD_REQUEST,
+        "name must have a value."
+      );
+    }
   }
 
   private validateEmail(email: string) {
