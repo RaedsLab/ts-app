@@ -16,3 +16,6 @@ export const templates = {
     resetUrl: "https://www.google.com",
   }),
 } as const;
+
+export type EmailTemplates = typeof templates;
+export type EmailTemplateType = keyof EmailTemplates;

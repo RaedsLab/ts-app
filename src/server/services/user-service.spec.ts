@@ -11,9 +11,26 @@ import { expectOperationError } from "../test/expect-operation-error";
 import { UserRepository } from "../../node/database/repositories/user-repository";
 import { UserService } from "./user-service";
 import { UserPasswordService } from "./user-password-service";
+import { AuthenticationService } from "./authentication-service";
+import { IEmailService, ISendOptions } from "./email-service";
+import { VerificationTokenService } from "./verification-token-service";
+
+class TestEmailService implements IEmailService {
+  parameters = new Array<ISendOptions>();
+
+  async send(options: ISendOptions) {
+    this.parameters.push(options);
+  }
+}
 
 describe("UserService", () => {
-  const service = new UserService();
+  let service: UserService;
+  let emailService: TestEmailService;
+
+  beforeEach(() => {
+    emailService = new TestEmailService();
+    service = new UserService(emailService);
+  });
 
   describe("getById", () => {
     it("should be able to get by id", async () => {
@@ -143,6 +160,168 @@ describe("UserService", () => {
         name,
       });
       expect(updatedUser.name).to.equal(name);
+    });
+  });
+
+  describe("changePassword", () => {
+    it("should reject if empty oldPassword", async () => {
+      const user = await createTestUser();
+
+      const err = await expectError(() =>
+        service.changePassword(user, {
+          oldPassword: "",
+          newPassword: "abcd1234",
+        })
+      );
+      expectOperationError(
+        err,
+        "INVALID_PARAMETERS",
+        HttpStatusCode.BAD_REQUEST
+      );
+    });
+
+    it("should reject if empty newPassword", async () => {
+      const user = await createTestUser();
+
+      const err = await expectError(() =>
+        service.changePassword(user, {
+          oldPassword: "abcd1234",
+          newPassword: "",
+        })
+      );
+      expectOperationError(
+        err,
+        "INVALID_PARAMETERS",
+        HttpStatusCode.BAD_REQUEST
+      );
+    });
+
+    it("should reject if oldPassword is invalid", async () => {
+      const { user } = await service.register({
+        email: testUserEmail,
+        name: testUserName,
+        password: testUserPassword,
+      });
+
+      const err = await expectError(() =>
+        service.changePassword(user, {
+          oldPassword: "wrong_password_123",
+          newPassword: "abcd1234",
+        })
+      );
+      expectOperationError(err, "INVALID_PASSWORD", HttpStatusCode.BAD_REQUEST);
+    });
+
+    it("should reject if newPassword doesn't meet requirements", async () => {
+      const { user } = await service.register({
+        email: testUserEmail,
+        name: testUserName,
+        password: testUserPassword,
+      });
+
+      const err = await expectError(() =>
+        service.changePassword(user, {
+          oldPassword: "test1234",
+          newPassword: "short",
+        })
+      );
+      expectOperationError(err, "INVALID_PASSWORD", HttpStatusCode.BAD_REQUEST);
+    });
+
+    it("should be able to change password successfully", async () => {
+      const { user } = await service.register({
+        email: testUserEmail,
+        name: testUserName,
+        password: testUserPassword,
+      });
+
+      const newPassword = "newPassword123";
+      await service.changePassword(user, {
+        oldPassword: testUserPassword,
+        newPassword,
+      });
+
+      // should be able to login
+      await new AuthenticationService().login({
+        email: testUserEmail,
+        password: newPassword,
+      });
+    });
+  });
+
+  describe("resetPassword", () => {
+    it("should reject unknown email address", async () => {
+      const err = await expectError(() =>
+        service.resetPassword("fake@email.com")
+      );
+      expectOperationError(err, "INVALID_EMAIL", HttpStatusCode.NOT_FOUND);
+    });
+
+    it("should send reset email", async () => {
+      const { user } = await service.register({
+        email: testUserEmail,
+        name: testUserName,
+        password: testUserPassword,
+      });
+
+      await service.resetPassword(user.email);
+
+      expect(emailService.parameters.length).to.equal(1);
+    });
+  });
+
+  describe("confirmResetPassword", () => {
+    it("should reject invalid token", async () => {
+      const err = await expectError(() =>
+        service.consumeResetPassword({
+          token: "FakeToken",
+          password: "test1234",
+        })
+      );
+      expectOperationError(err, "INVALID_TOKEN", HttpStatusCode.BAD_REQUEST);
+    });
+
+    it("should reject invalid password", async () => {
+      const user = await createTestUser();
+      const token = await new VerificationTokenService().create({
+        userId: user.id,
+        type: "reset_password",
+      });
+
+      const err = await expectError(() =>
+        service.consumeResetPassword({
+          token: token.value,
+          password: "abc",
+        })
+      );
+      expectOperationError(err, "INVALID_PASSWORD", HttpStatusCode.BAD_REQUEST);
+    });
+
+    it("should set password and return valid access token", async () => {
+      const user = await createTestUser();
+      const token = await new VerificationTokenService().create({
+        userId: user.id,
+        type: "reset_password",
+      });
+
+      const result = await service.consumeResetPassword({
+        token: token.value,
+        password: "new_password_123",
+      });
+
+      const userFromToken = await new AuthenticationService().getIdentity(
+        result.value
+      );
+      if (!userFromToken) {
+        throw new Error("expected to find user from access token");
+      }
+
+      expect(userFromToken.id).to.equal(user.id);
+
+      await new AuthenticationService().login({
+        password: "new_password_123",
+        email: user.email,
+      });
     });
   });
 });

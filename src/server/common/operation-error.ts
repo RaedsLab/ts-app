@@ -8,7 +8,8 @@ export type OperationErrorMessage =
   | "INVALID_PASSWORD"
   | "INVALID_TOKEN"
   | "INVALID_EMAIL_OR_PASSWORD"
-  | "INVALID_PARAMETERS";
+  | "INVALID_PARAMETERS"
+  | "EXPIRED_TOKEN";
 
 export class OperationError extends Error {
   constructor(

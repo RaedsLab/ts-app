@@ -7,8 +7,11 @@ import { isValidEmail } from "../../common/validation/is-valid-email";
 import { validatePasswordRequirements } from "../../common/validation/validate-password-requirements";
 import { log } from "../../node/utils/log";
 import { IUser } from "../../node/database/entities/user";
+import { renderResetPassword } from "../../email/templates/ResetEmail";
 import { AuthenticationService } from "./authentication-service";
 import { UserPasswordService } from "./user-password-service";
+import { VerificationTokenService } from "./verification-token-service";
+import { IEmailService } from "./email-service";
 
 export interface IUserCreateParams {
   email: string;
@@ -25,7 +28,19 @@ export interface IUpdateUserParams {
   name: string;
 }
 
+export interface IChangePasswordParams {
+  oldPassword: string;
+  newPassword: string;
+}
+
+export interface IConsumeResetPasswordParams {
+  token: string;
+  password: string;
+}
+
 export class UserService {
+  constructor(private readonly emailService: IEmailService) {}
+
   async getById(id: number) {
     const result = await this.repository.findOne({
       where: {
@@ -90,6 +105,119 @@ export class UserService {
       log.error(err.message);
 
       throw err;
+    }
+  }
+
+  async changePassword(user: IUser, params: IChangePasswordParams) {
+    this.validateChangePassword(params);
+
+    const passwordService = new UserPasswordService();
+    const isMatchingPassword = await passwordService.isValidPassword(
+      user.id,
+      params.oldPassword
+    );
+    if (!isMatchingPassword) {
+      throw new OperationError(
+        "INVALID_PASSWORD",
+        HttpStatusCode.BAD_REQUEST,
+        "Provided current password is invalid"
+      );
+    }
+
+    const isValidNewPassword = validatePasswordRequirements(params.newPassword);
+    if (!isValidNewPassword.success) {
+      throw new OperationError(
+        "INVALID_PASSWORD",
+        HttpStatusCode.BAD_REQUEST,
+        isValidNewPassword.error
+      );
+    }
+
+    await passwordService.setPassword({
+      userId: user.id,
+      password: params.newPassword,
+    });
+  }
+
+  async resetPassword(email: string) {
+    const user = await this.repository.findOne({
+      where: {
+        email,
+      },
+    });
+    if (!user) {
+      throw new OperationError(
+        "INVALID_EMAIL",
+        HttpStatusCode.NOT_FOUND,
+        "No user with this email found"
+      );
+    }
+
+    const token = await new VerificationTokenService().create({
+      userId: user.id,
+      type: "reset_password",
+    });
+
+    // const path = getPath((p) => p.resetPassword, { token: token.value });
+    // const url = `${env.uiHost}/#${path}`;
+    const url = `PLACEHOLDER_URL/${token}`;
+
+    await this.emailService.send({
+      to: email,
+      subject: "Reset Email",
+      content: renderResetPassword({
+        resetUrl: url,
+      }),
+    });
+  }
+
+  async consumeResetPassword({ token, password }: IConsumeResetPasswordParams) {
+    const confirmation = await new VerificationTokenService().consume(token);
+
+    const user = await this.repository.findOne({
+      where: { id: confirmation.user_id },
+    });
+    if (!user) {
+      log.error(
+        `attempted to find user ${confirmation.user_id} but nothing turned up`
+      );
+      throw new OperationError(
+        "UNKNOWN_ERROR",
+        HttpStatusCode.INTERNAL_SERVER_ERROR
+      );
+    }
+
+    const passwordValidationResult = validatePasswordRequirements(password);
+    if (!passwordValidationResult.success) {
+      throw new OperationError(
+        "INVALID_PASSWORD",
+        HttpStatusCode.BAD_REQUEST,
+        passwordValidationResult.error
+      );
+    }
+
+    await new UserPasswordService().setPassword({ userId: user.id, password });
+    return new AuthenticationService().getUserAccessToken(user);
+  }
+
+  private validateChangePassword({
+    oldPassword,
+    newPassword,
+  }: IChangePasswordParams) {
+    if (!oldPassword) {
+      throw new OperationError(
+        "INVALID_PARAMETERS",
+        HttpStatusCode.BAD_REQUEST,
+        "oldPassword must have a value."
+      );
+    }
+
+    if (!newPassword) {
+      throw new OperationError(
+        "INVALID_PARAMETERS",
+        HttpStatusCode.BAD_REQUEST,
+        "newPassword must have a value."
+      );
     }
   }
 

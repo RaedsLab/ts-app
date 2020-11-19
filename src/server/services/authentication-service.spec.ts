@@ -8,12 +8,17 @@ import { expectError } from "../../node/test/expect-error";
 import { HttpStatusCode } from "../common/http-status-code";
 import { expectOperationError } from "../test/expect-operation-error";
 import { AuthenticationService } from "./authentication-service";
+import { IEmailService } from "./email-service";
 import { UserService } from "./user-service";
 
 describe("AuthenticationService", () => {
   const service = new AuthenticationService();
   const registerUser = () => {
-    return new UserService().register({
+    const emailService: IEmailService = {
+      send: async () => undefined,
+    };
+
+    return new UserService(emailService).register({
       email: testUserEmail,
       name: testUserName,
       password: testUserPassword,

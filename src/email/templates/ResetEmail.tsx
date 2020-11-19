@@ -1,4 +1,5 @@
 import React from "react";
+import ReactDOMServer from "react-dom/server";
 import { EmailWrapper } from "./EmailWrapper";
 
 export interface IResetPasswordProps {
@@ -17,3 +18,6 @@ export const ResetPassword: React.FC<IResetPasswordProps> = ({ resetUrl }) => {
     </EmailWrapper>
   );
 };
+
+export const renderResetPassword = (props: IResetPasswordProps) =>
+  ReactDOMServer.renderToStaticMarkup(<ResetPassword {...props} />);
