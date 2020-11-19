@@ -12,7 +12,8 @@
     "test": "cross-env NODE_ENV=test DB_CONNECTION=saas_test SERVER_PORT=3037 JWT_SECRET=abc123 mocha -t 15000 -r ts-node/register \"./**/*.spec.ts\"",
     "build": "tsc --build",
     "watch": "yarn build --watch",
-    "typeorm": "ts-node ./node_modules/.bin/typeorm"
+    "typeorm": "ts-node ./node_modules/.bin/typeorm",
+    "email": "ts-node ./src/email/index.ts"
   },
   "dependencies": {
     "bcrypt": "^5.0.0",

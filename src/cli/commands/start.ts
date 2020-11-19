@@ -75,6 +75,8 @@ const start: CommandModule<
         "./src/server/**/*.ts",
         "./src/common/**/*.ts",
         "./src/node/**/*.ts",
+        "./src/email/**/*.ts",
+        "./src/email/**/*.tsx",
       ])
       .on("change", regenerateApiRoutes);
 
